@@ -118,7 +118,6 @@ nav button.active { color: var(--accent); font-weight: 600; }
 .setrow input { width: 80px; }
 .setrow .unit { font-size: 13px; color: var(--ink-2); }
 .setrow .del { margin-left: auto; border: none; background: none; color: var(--muted); font-size: 16px; padding: 4px 8px; }
-.wonote { font-size: 12px; color: var(--muted); margin-top: 6px; white-space: pre-wrap; }
 .expicker { display: flex; flex-wrap: wrap; gap: 8px; }
 .expicker button { min-height: 40px; }
 
@@ -153,7 +152,6 @@ table.cal td .marks { display: flex; gap: 3px; justify-content: center; margin-t
 .daycard .dc-wo { font-size: 14px; padding: 3px 0; display: flex; gap: 8px; align-items: baseline; }
 .daycard .dc-wo .exn { font-weight: 600; min-width: 3.2em; flex-shrink: 0; }
 .daycard .dc-wo .sets { color: var(--ink-2); font-variant-numeric: tabular-nums; }
-.daycard .dc-note { font-size: 12px; color: var(--muted); margin-top: 2px; white-space: pre-wrap; }
 
 /* 集計 */
 .chips { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
@@ -218,16 +216,28 @@ function loadStore() {
     const raw = localStorage.getItem(LS_KEY);
     if (raw) {
       const s = JSON.parse(raw);
-      if (s && s.days && s.exercises) return s;
+      if (s && s.days && s.exercises) return migrate(s);
     }
   } catch (e) { /* 壊れていたら初期化 */ }
-  const init = {
+  const init = migrate({
     version: 1,
     exercises: JSON.parse(JSON.stringify(DEFAULT_EXERCISES)),
     days: (typeof INITIAL_DATA !== 'undefined' && INITIAL_DATA && INITIAL_DATA.days) ? INITIAL_DATA.days : {},
-  };
+  });
   localStorage.setItem(LS_KEY, JSON.stringify(init));
   return init;
+}
+// v2: メモを廃止（運動の記録のみ残す）。旧データ・旧バックアップから読み込んだ場合もここで除去される
+function migrate(s) {
+  if (!s.version || s.version < 2) {
+    for (const d of Object.values(s.days)) {
+      delete d.note;
+      for (const w of (d.workouts || [])) delete w.note;
+    }
+    s.version = 2;
+    localStorage.setItem(LS_KEY, JSON.stringify(s));
+  }
+  return s;
 }
 function save() { localStorage.setItem(LS_KEY, JSON.stringify(store)); }
 
@@ -372,7 +382,6 @@ function renderInput(main) {
       });
       html += `<button class="ghost" onclick="addSet(${wi})">＋ セット追加</button>`;
     }
-    if (w.note) html += `<div class="wonote">${esc(w.note)}</div>`;
     html += `</div>`;
   });
 
@@ -539,9 +548,7 @@ function renderList(main) {
         ? `${w.minutes != null ? w.minutes + '分' : ''}`
         : fmtSets(w.sets || []);
       woHtml += `<div class="dc-wo"><span class="exn">${esc(exName(w.ex))}</span><span class="sets">${esc(detail)}</span></div>`;
-      if (w.note) woHtml += `<div class="dc-note">${esc(w.note)}</div>`;
     }
-    if (d.note) woHtml += `<div class="dc-note">${esc(d.note)}</div>`;
     html += `<div class="card daycard" onclick="openDate('${k}')">
       <div class="dc-date">${fmtIso(k)}</div>${bodyLine}${woHtml}</div>`;
   }
@@ -769,7 +776,7 @@ document.getElementById('importFile').addEventListener('change', function () {
       const s = JSON.parse(reader.result);
       if (!s || typeof s.days !== 'object' || !Array.isArray(s.exercises)) throw new Error('形式が違います');
       if (!confirm(`インポートすると現在のデータ（${Object.keys(store.days).length}日分）を置き換えます。よろしいですか？`)) return;
-      store = s;
+      store = migrate(s);
       save(); render();
       alert(`インポート完了: ${Object.keys(store.days).length}日分`);
     } catch (e) {
