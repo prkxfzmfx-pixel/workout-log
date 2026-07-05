@@ -1,0 +1,796 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="筋トレ記録">
+<meta name="theme-color" content="#2a78d6">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" href="icons/icon-192.png">
+<title>筋トレ記録</title>
+<style>
+:root {
+  --surface-1: #fcfcfb;
+  --page: #f9f9f7;
+  --ink-1: #0b0b0b;
+  --ink-2: #52514e;
+  --muted: #898781;
+  --grid: #e1e0d9;
+  --baseline: #c3c2b7;
+  --border: rgba(11,11,11,0.10);
+  --series-1: #2a78d6;   /* 体重・筋トレマーク */
+  --series-2: #1baf7a;   /* 除脂肪・有酸素マーク */
+  --danger: #d03b3b;
+  --accent: #2a78d6;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --surface-1: #1a1a19;
+    --page: #0d0d0d;
+    --ink-1: #ffffff;
+    --ink-2: #c3c2b7;
+    --muted: #898781;
+    --grid: #2c2c2a;
+    --baseline: #383835;
+    --border: rgba(255,255,255,0.10);
+    --series-1: #3987e5;
+    --series-2: #199e70;
+    --danger: #e66767;
+    --accent: #3987e5;
+  }
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  font-family: system-ui, -apple-system, "Segoe UI", "Hiragino Sans", "Yu Gothic UI", sans-serif;
+  background: var(--page);
+  color: var(--ink-1);
+  font-size: 16px;
+  padding-bottom: calc(64px + env(safe-area-inset-bottom));
+}
+main { max-width: 640px; margin: 0 auto; padding: 12px 12px 24px; }
+h1 { font-size: 18px; padding: 14px 4px 6px; }
+h2 { font-size: 14px; color: var(--ink-2); font-weight: 600; margin: 16px 4px 8px; }
+.card {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+  margin-bottom: 10px;
+}
+button {
+  font: inherit;
+  color: var(--ink-1);
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+button.primary { background: var(--accent); color: #fff; border-color: transparent; font-weight: 600; }
+button.ghost { background: transparent; border-color: transparent; color: var(--accent); }
+button.danger { color: var(--danger); }
+input, select {
+  font: inherit;
+  color: var(--ink-1);
+  background: var(--page);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px;
+}
+input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+input[type="number"] { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* ボトムナビ */
+nav {
+  position: fixed; bottom: 0; left: 0; right: 0; z-index: 10;
+  display: flex;
+  background: var(--surface-1);
+  border-top: 1px solid var(--border);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+nav button {
+  flex: 1; border: none; border-radius: 0; background: none;
+  padding: 8px 0 6px; font-size: 10px; color: var(--muted);
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+}
+nav button .ico { font-size: 20px; line-height: 1; }
+nav button.active { color: var(--accent); font-weight: 600; }
+
+/* 記録画面 */
+.daynav { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
+.daynav input[type="date"] { flex: 1; text-align: center; min-height: 40px; }
+.daynav button { min-width: 44px; min-height: 40px; }
+.bodyrow { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.bodyrow label { font-size: 13px; color: var(--ink-2); }
+.bodyrow input { width: 76px; }
+.lean { font-size: 13px; color: var(--ink-2); margin-top: 8px; }
+.lean b { color: var(--ink-1); font-variant-numeric: tabular-nums; }
+.wo-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.wo-head .name { font-weight: 600; }
+.setrow { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; }
+.setrow .idx { width: 20px; font-size: 12px; color: var(--muted); text-align: center; }
+.setrow input { width: 80px; }
+.setrow .unit { font-size: 13px; color: var(--ink-2); }
+.setrow .del { margin-left: auto; border: none; background: none; color: var(--muted); font-size: 16px; padding: 4px 8px; }
+.wonote { font-size: 12px; color: var(--muted); margin-top: 6px; white-space: pre-wrap; }
+.expicker { display: flex; flex-wrap: wrap; gap: 8px; }
+.expicker button { min-height: 40px; }
+
+/* カレンダー */
+.cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.cal-head .ym { font-size: 17px; font-weight: 700; }
+.cal-head button { min-width: 44px; }
+table.cal { width: 100%; border-collapse: collapse; table-layout: fixed; }
+table.cal th { font-size: 11px; color: var(--muted); font-weight: 500; padding: 4px 0; }
+table.cal td {
+  height: 58px; vertical-align: top; text-align: center;
+  border-top: 1px solid var(--grid); cursor: pointer; padding: 3px 0;
+}
+table.cal td .d { font-size: 13px; }
+table.cal td.today .d {
+  display: inline-block; min-width: 22px; line-height: 22px;
+  background: var(--accent); color: #fff; border-radius: 11px; font-weight: 600;
+}
+table.cal td .bw { font-size: 10px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+table.cal td .marks { display: flex; gap: 3px; justify-content: center; margin-top: 2px; height: 8px; }
+.dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+.dot.st { background: var(--series-1); }
+.dot.ca { background: var(--series-2); }
+.cal-legend { display: flex; gap: 16px; margin-top: 10px; font-size: 12px; color: var(--ink-2); align-items: center; }
+.cal-legend span { display: flex; align-items: center; gap: 5px; }
+
+/* 一覧 */
+.month-head { font-size: 13px; font-weight: 700; color: var(--ink-2); margin: 14px 4px 6px; }
+.daycard { cursor: pointer; }
+.daycard .dc-date { font-weight: 700; margin-bottom: 4px; display: flex; align-items: center; gap: 8px; }
+.daycard .dc-body { font-size: 13px; color: var(--ink-2); margin-bottom: 6px; font-variant-numeric: tabular-nums; }
+.daycard .dc-wo { font-size: 14px; padding: 3px 0; display: flex; gap: 8px; align-items: baseline; }
+.daycard .dc-wo .exn { font-weight: 600; min-width: 3.2em; flex-shrink: 0; }
+.daycard .dc-wo .sets { color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.daycard .dc-note { font-size: 12px; color: var(--muted); margin-top: 2px; white-space: pre-wrap; }
+
+/* 集計 */
+.chips { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
+.chips button { padding: 6px 12px; font-size: 13px; border-radius: 16px; }
+.chips button.on { background: var(--accent); color: #fff; border-color: transparent; }
+.legend { display: flex; gap: 16px; font-size: 12px; color: var(--ink-2); margin-bottom: 6px; }
+.legend span { display: flex; align-items: center; gap: 5px; }
+.legend i { width: 14px; height: 3px; border-radius: 2px; display: inline-block; }
+.chartwrap { position: relative; }
+.tooltip {
+  position: absolute; pointer-events: none; display: none;
+  background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px;
+  padding: 6px 9px; font-size: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.15);
+  white-space: nowrap; z-index: 5;
+}
+.tooltip b { font-variant-numeric: tabular-nums; }
+.empty { color: var(--muted); font-size: 13px; padding: 24px 0; text-align: center; }
+table.sum { width: 100%; border-collapse: collapse; font-size: 13px; }
+table.sum th { text-align: right; color: var(--muted); font-weight: 500; padding: 6px 4px; border-bottom: 1px solid var(--baseline); }
+table.sum th:first-child, table.sum td:first-child { text-align: left; }
+table.sum td { text-align: right; padding: 6px 4px; border-bottom: 1px solid var(--grid); font-variant-numeric: tabular-nums; }
+
+/* 設定 */
+.exrow { display: flex; gap: 8px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--grid); }
+.exrow:last-child { border-bottom: none; }
+.exrow input[type="text"] { flex: 1; min-width: 0; }
+.exrow .type { font-size: 11px; color: var(--muted); width: 62px; flex-shrink: 0; }
+.exrow.hidden-ex input[type="text"] { color: var(--muted); text-decoration: line-through; }
+.addex { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.addex input[type="text"] { flex: 1; min-width: 120px; }
+.setting-actions { display: flex; flex-direction: column; gap: 8px; }
+.setting-actions button { text-align: left; }
+.hint { font-size: 12px; color: var(--muted); margin-top: 6px; line-height: 1.5; }
+textarea.io { width: 100%; height: 90px; font-size: 12px; margin-top: 8px; font-family: ui-monospace, monospace;
+  background: var(--page); color: var(--ink-1); border: 1px solid var(--border); border-radius: 8px; padding: 8px; }
+</style>
+</head>
+<body>
+<main id="main"></main>
+<nav id="nav"></nav>
+<input type="file" id="importFile" accept=".json,application/json" style="display:none">
+<script src="data.js"></script>
+<script>
+'use strict';
+/* ================= ストア ================= */
+const LS_KEY = 'kintore.v1';
+const DEFAULT_EXERCISES = [
+  { id: 's',  name: '背中',   type: 'weight' },
+  { id: 'u',  name: '腕',     type: 'weight' },
+  { id: 'k',  name: '肩',     type: 'weight' },
+  { id: 'm',  name: '胸',     type: 'weight' },
+  { id: 'h',  name: '腹',     type: 'reps'   },
+  { id: 'ms', name: '胸下',   type: 'weight' },
+  { id: 'ku', name: '肩後',   type: 'weight' },
+  { id: 'r',  name: '有酸素', type: 'cardio' },
+];
+
+let store = loadStore();
+
+function loadStore() {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (raw) {
+      const s = JSON.parse(raw);
+      if (s && s.days && s.exercises) return s;
+    }
+  } catch (e) { /* 壊れていたら初期化 */ }
+  const init = {
+    version: 1,
+    exercises: JSON.parse(JSON.stringify(DEFAULT_EXERCISES)),
+    days: (typeof INITIAL_DATA !== 'undefined' && INITIAL_DATA && INITIAL_DATA.days) ? INITIAL_DATA.days : {},
+  };
+  localStorage.setItem(LS_KEY, JSON.stringify(init));
+  return init;
+}
+function save() { localStorage.setItem(LS_KEY, JSON.stringify(store)); }
+
+function exById(id) { return store.exercises.find(e => e.id === id); }
+function exName(id) { const e = exById(id); return e ? e.name : id; }
+function exType(id) { const e = exById(id); return e ? e.type : 'weight'; }
+
+function getDay(date) { return store.days[date]; }
+function ensureDay(date) {
+  if (!store.days[date]) store.days[date] = { workouts: [] };
+  if (!store.days[date].workouts) store.days[date].workouts = [];
+  return store.days[date];
+}
+function cleanupDay(date) {
+  const d = store.days[date];
+  if (!d) return;
+  const noBody = !d.body || (d.body.weight == null && d.body.fat == null);
+  if (noBody && (!d.workouts || d.workouts.length === 0) && !d.note) delete store.days[date];
+}
+
+/* ================= ユーティリティ ================= */
+const WD = ['日', '月', '火', '水', '木', '金', '土'];
+function todayIso() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+function isoToDate(iso) { const [y, m, d] = iso.split('-').map(Number); return new Date(y, m - 1, d); }
+function fmtIso(iso, withYear) {
+  const [y, m, d] = iso.split('-').map(Number);
+  const wd = WD[isoToDate(iso).getDay()];
+  return (withYear ? `${y}/` : '') + `${m}/${d}(${wd})`;
+}
+function shiftDate(iso, days) {
+  const d = isoToDate(iso);
+  d.setDate(d.getDate() + days);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+function num(v) { if (v == null || String(v).trim() === '') return null; const n = Number(v); return Number.isFinite(n) ? n : null; }
+function leanMass(body) {
+  if (!body || body.weight == null || body.fat == null) return null;
+  return Math.round(body.weight * (1 - body.fat / 100) * 10) / 10;
+}
+function fmtSets(sets) {
+  const parts = [];
+  let i = 0;
+  while (i < sets.length) {
+    let j = i;
+    while (j + 1 < sets.length && sets[j + 1].w === sets[i].w && sets[j + 1].r === sets[i].r) j++;
+    const n = j - i + 1;
+    const s = sets[i];
+    parts.push((s.w != null ? s.w + 'kg ' : '') + (s.r != null ? s.r + '回' : '') + (n > 1 ? '×' + n : ''));
+    i = j + 1;
+  }
+  return parts.join('、');
+}
+function dayFlags(d) {
+  let st = false, ca = false;
+  for (const w of (d.workouts || [])) {
+    if (exType(w.ex) === 'cardio' || w.minutes != null) ca = true;
+    else st = true;
+  }
+  return { st, ca };
+}
+
+/* ================= 画面状態 ================= */
+const state = {
+  tab: 'input',
+  date: todayIso(),
+  calY: null, calM: null,   // カレンダー表示中の年月
+  range: '3m',              // 集計の期間
+};
+
+/* ================= ナビ ================= */
+const TABS = [
+  { id: 'cal',      ico: '📅', label: 'カレンダー' },
+  { id: 'list',     ico: '📋', label: '一覧' },
+  { id: 'input',    ico: '✏️', label: '記録' },
+  { id: 'stats',    ico: '📈', label: '集計' },
+  { id: 'settings', ico: '⚙️', label: '設定' },
+];
+function renderNav() {
+  document.getElementById('nav').innerHTML = TABS.map(t =>
+    `<button class="${state.tab === t.id ? 'active' : ''}" onclick="go('${t.id}')"><span class="ico">${t.ico}</span>${t.label}</button>`
+  ).join('');
+}
+function go(tab) { state.tab = tab; render(); window.scrollTo(0, 0); }
+function openDate(date) { state.date = date; state.tab = 'input'; render(); window.scrollTo(0, 0); }
+
+function render() {
+  renderNav();
+  const main = document.getElementById('main');
+  if (state.tab === 'input') renderInput(main);
+  else if (state.tab === 'cal') renderCal(main);
+  else if (state.tab === 'list') renderList(main);
+  else if (state.tab === 'stats') renderStats(main);
+  else renderSettings(main);
+}
+
+/* ================= 記録画面 ================= */
+function renderInput(main) {
+  const date = state.date;
+  const d = getDay(date) || {};
+  const body = d.body || {};
+  const lean = leanMass(body);
+  const workouts = d.workouts || [];
+
+  let html = `
+  <h1>記録</h1>
+  <div class="daynav">
+    <button onclick="chDate(-1)" aria-label="前日">◀</button>
+    <input type="date" value="${date}" onchange="setDate(this.value)">
+    <button onclick="chDate(1)" aria-label="翌日">▶</button>
+  </div>
+  <h2>体組成</h2>
+  <div class="card">
+    <div class="bodyrow">
+      <label>体重 <input type="number" inputmode="decimal" step="0.1" min="0" value="${body.weight ?? ''}" onchange="setBody('weight', this.value)"> kg</label>
+      <label>体脂肪率 <input type="number" inputmode="decimal" step="0.1" min="0" max="100" value="${body.fat ?? ''}" onchange="setBody('fat', this.value)"> %</label>
+    </div>
+    <div class="lean">除脂肪体重（自動計算）: <b>${lean != null ? lean + ' kg' : '—'}</b></div>
+  </div>
+  <h2>トレーニング</h2>`;
+
+  workouts.forEach((w, wi) => {
+    const t = exType(w.ex);
+    html += `<div class="card"><div class="wo-head"><span class="name">${esc(exName(w.ex))}</span>
+      <button class="ghost danger" onclick="delWorkout(${wi})">削除</button></div>`;
+    if (t === 'cardio') {
+      html += `<div class="setrow"><input type="number" inputmode="decimal" step="1" min="0" value="${w.minutes ?? ''}"
+        onchange="setMinutes(${wi}, this.value)"><span class="unit">分</span></div>`;
+    } else {
+      (w.sets || []).forEach((s, si) => {
+        html += `<div class="setrow"><span class="idx">${si + 1}</span>`;
+        if (t === 'weight') {
+          html += `<input type="number" inputmode="decimal" step="0.5" min="0" value="${s.w ?? ''}"
+            onchange="setSetVal(${wi},${si},'w',this.value)"><span class="unit">kg</span> × `;
+        }
+        html += `<input type="number" inputmode="numeric" step="1" min="0" value="${s.r ?? ''}"
+          onchange="setSetVal(${wi},${si},'r',this.value)"><span class="unit">回</span>
+          <button class="del" onclick="delSet(${wi},${si})" aria-label="セット削除">✕</button></div>`;
+      });
+      html += `<button class="ghost" onclick="addSet(${wi})">＋ セット追加</button>`;
+    }
+    if (w.note) html += `<div class="wonote">${esc(w.note)}</div>`;
+    html += `</div>`;
+  });
+
+  const visible = store.exercises.filter(e => !e.hidden);
+  html += `<h2>種目を追加</h2><div class="card"><div class="expicker">` +
+    visible.map(e => `<button onclick="addWorkout('${e.id}')">${esc(e.name)}</button>`).join('') +
+    `</div><div class="hint">タップで追加。前回の重量・回数が自動で入ります。</div></div>`;
+
+  main.innerHTML = html;
+}
+function setDate(v) { if (v) { state.date = v; render(); } }
+function chDate(n) { state.date = shiftDate(state.date, n); render(); }
+function setBody(key, v) {
+  const d = ensureDay(state.date);
+  if (!d.body) d.body = {};
+  d.body[key] = num(v);
+  if (d.body[key] == null) delete d.body[key];
+  if (Object.keys(d.body).length === 0) delete d.body;
+  cleanupDay(state.date);
+  save(); render();
+}
+// 前回同種目のセット内容を返す（プリセット用）
+function lastSetsOf(exId, beforeDate) {
+  const keys = Object.keys(store.days).sort().reverse();
+  for (const k of keys) {
+    if (k >= beforeDate) continue;
+    for (const w of (store.days[k].workouts || [])) {
+      if (w.ex !== exId) continue;
+      if (w.minutes != null) return { minutes: w.minutes };
+      if (w.sets && w.sets.length) return { sets: w.sets.map(s => ({ ...s })) };
+    }
+  }
+  return null;
+}
+function addWorkout(exId) {
+  const d = ensureDay(state.date);
+  const t = exType(exId);
+  const prev = lastSetsOf(exId, state.date);
+  let w;
+  if (t === 'cardio') w = { ex: exId, minutes: prev ? prev.minutes : null };
+  else if (prev && prev.sets) w = { ex: exId, sets: prev.sets };
+  else w = { ex: exId, sets: [t === 'weight' ? { w: null, r: null } : { r: null }] };
+  d.workouts.push(w);
+  save(); render();
+}
+function delWorkout(wi) {
+  const d = getDay(state.date);
+  if (!d) return;
+  const w = d.workouts[wi];
+  const label = exName(w.ex);
+  if (!confirm(`「${label}」を削除しますか？`)) return;
+  d.workouts.splice(wi, 1);
+  cleanupDay(state.date);
+  save(); render();
+}
+function addSet(wi) {
+  const w = getDay(state.date).workouts[wi];
+  const last = w.sets[w.sets.length - 1];
+  w.sets.push(last ? { ...last } : (exType(w.ex) === 'weight' ? { w: null, r: null } : { r: null }));
+  save(); render();
+}
+function delSet(wi, si) {
+  const w = getDay(state.date).workouts[wi];
+  w.sets.splice(si, 1);
+  save(); render();
+}
+function setSetVal(wi, si, key, v) {
+  const s = getDay(state.date).workouts[wi].sets[si];
+  const n = num(v);
+  if (n == null) delete s[key]; else s[key] = n;
+  save();
+}
+function setMinutes(wi, v) {
+  getDay(state.date).workouts[wi].minutes = num(v);
+  save();
+}
+
+/* ================= カレンダー ================= */
+function renderCal(main) {
+  if (state.calY == null) {
+    const t = isoToDate(state.date);
+    state.calY = t.getFullYear(); state.calM = t.getMonth();
+  }
+  const y = state.calY, m = state.calM;
+  const first = new Date(y, m, 1);
+  const startWd = first.getDay();
+  const daysInMonth = new Date(y, m + 1, 0).getDate();
+  const today = todayIso();
+
+  let cells = '';
+  let row = '<tr>';
+  for (let i = 0; i < startWd; i++) row += '<td></td>';
+  for (let day = 1; day <= daysInMonth; day++) {
+    const iso = `${y}-${String(m + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const d = getDay(iso);
+    const flags = d ? dayFlags(d) : { st: false, ca: false };
+    const bw = d && d.body && d.body.weight != null ? d.body.weight : null;
+    row += `<td class="${iso === today ? 'today' : ''}" onclick="openDate('${iso}')">
+      <div class="d">${day}</div>
+      <div class="bw">${bw != null ? bw : '&nbsp;'}</div>
+      <div class="marks">${flags.st ? '<span class="dot st"></span>' : ''}${flags.ca ? '<span class="dot ca"></span>' : ''}</div>
+    </td>`;
+    if ((startWd + day) % 7 === 0) { cells += row + '</tr>'; row = '<tr>'; }
+  }
+  if (row !== '<tr>') {
+    const rest = 7 - ((startWd + daysInMonth) % 7);
+    if (rest < 7) for (let i = 0; i < rest; i++) row += '<td></td>';
+    cells += row + '</tr>';
+  }
+
+  main.innerHTML = `
+  <h1>カレンダー</h1>
+  <div class="card">
+    <div class="cal-head">
+      <button onclick="chMonth(-1)" aria-label="前月">◀</button>
+      <span class="ym">${y}年${m + 1}月</span>
+      <button onclick="chMonth(1)" aria-label="翌月">▶</button>
+    </div>
+    <table class="cal">
+      <thead><tr>${WD.map(w => `<th>${w}</th>`).join('')}</tr></thead>
+      <tbody>${cells}</tbody>
+    </table>
+    <div class="cal-legend">
+      <span><span class="dot st"></span>筋トレ</span>
+      <span><span class="dot ca"></span>有酸素</span>
+      <span>数字＝体重(kg)</span>
+    </div>
+  </div>`;
+}
+function chMonth(n) {
+  state.calM += n;
+  if (state.calM < 0) { state.calM = 11; state.calY--; }
+  if (state.calM > 11) { state.calM = 0; state.calY++; }
+  render();
+}
+
+/* ================= 一覧 ================= */
+function renderList(main) {
+  const keys = Object.keys(store.days).sort().reverse();
+  let html = '<h1>一覧</h1>';
+  if (!keys.length) html += '<div class="empty">記録がまだありません</div>';
+  let curMonth = '';
+  for (const k of keys) {
+    const d = store.days[k];
+    const ym = k.slice(0, 7);
+    if (ym !== curMonth) {
+      curMonth = ym;
+      const [yy, mm] = ym.split('-');
+      html += `<div class="month-head">${yy}年${Number(mm)}月</div>`;
+    }
+    const lean = leanMass(d.body);
+    let bodyLine = '';
+    if (d.body && (d.body.weight != null || d.body.fat != null)) {
+      const p = [];
+      if (d.body.weight != null) p.push(`体重 ${d.body.weight}kg`);
+      if (d.body.fat != null) p.push(`体脂肪 ${d.body.fat}%`);
+      if (lean != null) p.push(`除脂肪 ${lean}kg`);
+      bodyLine = `<div class="dc-body">${p.join('　')}</div>`;
+    }
+    let woHtml = '';
+    for (const w of (d.workouts || [])) {
+      const t = exType(w.ex);
+      const detail = t === 'cardio' || w.minutes != null
+        ? `${w.minutes != null ? w.minutes + '分' : ''}`
+        : fmtSets(w.sets || []);
+      woHtml += `<div class="dc-wo"><span class="exn">${esc(exName(w.ex))}</span><span class="sets">${esc(detail)}</span></div>`;
+      if (w.note) woHtml += `<div class="dc-note">${esc(w.note)}</div>`;
+    }
+    if (d.note) woHtml += `<div class="dc-note">${esc(d.note)}</div>`;
+    html += `<div class="card daycard" onclick="openDate('${k}')">
+      <div class="dc-date">${fmtIso(k)}</div>${bodyLine}${woHtml}</div>`;
+  }
+  main.innerHTML = html;
+}
+
+/* ================= 集計 ================= */
+const RANGES = [['1m', '1ヶ月'], ['3m', '3ヶ月'], ['1y', '1年'], ['all', '全期間']];
+function rangeStart(range) {
+  const d = new Date();
+  if (range === '1m') d.setMonth(d.getMonth() - 1);
+  else if (range === '3m') d.setMonth(d.getMonth() - 3);
+  else if (range === '1y') d.setFullYear(d.getFullYear() - 1);
+  else return '0000-00-00';
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+function renderStats(main) {
+  const from = rangeStart(state.range);
+  const pts = Object.keys(store.days).sort()
+    .filter(k => k >= from)
+    .map(k => ({ date: k, w: store.days[k].body?.weight ?? null, lean: leanMass(store.days[k].body) }))
+    .filter(p => p.w != null);
+
+  let html = `<h1>集計</h1>
+  <h2>体重の推移</h2>
+  <div class="card">
+    <div class="chips">` + RANGES.map(([id, label]) =>
+      `<button class="${state.range === id ? 'on' : ''}" onclick="setRange('${id}')">${label}</button>`).join('') + `</div>`;
+
+  if (pts.length === 0) {
+    html += `<div class="empty">この期間に体重の記録がありません。<br>「記録」タブの体組成欄から入力できます。</div></div>`;
+  } else {
+    html += `<div class="legend">
+      <span><i style="background:var(--series-1)"></i>体重</span>
+      <span><i style="background:var(--series-2)"></i>除脂肪体重</span>
+    </div>
+    <div class="chartwrap" id="chartwrap">${buildChart(pts)}<div class="tooltip" id="tt"></div></div></div>`;
+  }
+
+  html += `<h2>月別サマリ</h2><div class="card" style="overflow-x:auto">${buildMonthly()}</div>`;
+  main.innerHTML = html;
+  if (pts.length) attachChartHover(pts);
+}
+function setRange(r) { state.range = r; render(); }
+
+let chartGeom = null;
+function buildChart(pts) {
+  const W = 600, H = 260, padL = 40, padR = 12, padT = 12, padB = 26;
+  const xs = pts.map(p => isoToDate(p.date).getTime());
+  const x0 = Math.min(...xs), x1 = Math.max(...xs);
+  const vals = [];
+  pts.forEach(p => { vals.push(p.w); if (p.lean != null) vals.push(p.lean); });
+  let lo = Math.min(...vals), hi = Math.max(...vals);
+  if (hi - lo < 2) { lo -= 1; hi += 1; }
+  const pad = (hi - lo) * 0.1;
+  lo -= pad; hi += pad;
+  const X = t => x1 === x0 ? (padL + (W - padL - padR) / 2) : padL + (t - x0) / (x1 - x0) * (W - padL - padR);
+  const Y = v => padT + (hi - v) / (hi - lo) * (H - padT - padB);
+  chartGeom = { W, H, padL, padR, X, xs };
+
+  // Yグリッド: 4本程度
+  const step = niceStep((hi - lo) / 4);
+  let grid = '', gy = Math.ceil(lo / step) * step;
+  for (; gy < hi; gy += step) {
+    const y = Y(gy);
+    grid += `<line x1="${padL}" y1="${y}" x2="${W - padR}" y2="${y}" stroke="var(--grid)" stroke-width="1"/>
+      <text x="${padL - 6}" y="${y + 4}" text-anchor="end" font-size="10" fill="var(--muted)" style="font-variant-numeric:tabular-nums">${round1(gy)}</text>`;
+  }
+  // X軸ラベル: 最初・中央・最後
+  const lab = idxs => idxs.map(i => {
+    const p = pts[i];
+    const [, m, dd] = p.date.split('-').map(Number);
+    return `<text x="${X(xs[i])}" y="${H - 8}" text-anchor="middle" font-size="10" fill="var(--muted)">${m}/${dd}</text>`;
+  }).join('');
+  const xIdx = pts.length === 1 ? [0] : (pts.length === 2 ? [0, pts.length - 1] : [0, Math.floor(pts.length / 2), pts.length - 1]);
+
+  const line = (key, color) => {
+    const seq = pts.map((p, i) => p[key] != null ? `${X(xs[i])},${Y(p[key])}` : null).filter(Boolean);
+    if (seq.length === 0) return '';
+    if (seq.length === 1) { const [cx, cy] = seq[0].split(','); return `<circle cx="${cx}" cy="${cy}" r="4" fill="${color}"/>`; }
+    let dots = '';
+    if (pts.length <= 40) {
+      dots = pts.map((p, i) => p[key] != null
+        ? `<circle cx="${X(xs[i])}" cy="${Y(p[key])}" r="3" fill="${color}" stroke="var(--surface-1)" stroke-width="2"/>` : '').join('');
+    }
+    return `<polyline points="${seq.join(' ')}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>` + dots;
+  };
+
+  return `<svg id="chart" viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block;touch-action:pan-y">
+    ${grid}
+    <line x1="${padL}" y1="${H - padB}" x2="${W - padR}" y2="${H - padB}" stroke="var(--baseline)" stroke-width="1"/>
+    ${lab(xIdx)}
+    <line id="xline" x1="0" y1="${padT}" x2="0" y2="${H - padB}" stroke="var(--baseline)" stroke-width="1" visibility="hidden"/>
+    ${line('lean', 'var(--series-2)')}
+    ${line('w', 'var(--series-1)')}
+  </svg>`;
+}
+function niceStep(raw) {
+  const p = Math.pow(10, Math.floor(Math.log10(raw)));
+  for (const m of [1, 2, 2.5, 5, 10]) if (raw <= m * p) return m * p;
+  return 10 * p;
+}
+function round1(v) { return Math.round(v * 10) / 10; }
+function attachChartHover(pts) {
+  const svg = document.getElementById('chart');
+  const wrap = document.getElementById('chartwrap');
+  const tt = document.getElementById('tt');
+  const xline = document.getElementById('xline');
+  if (!svg) return;
+  const { X, xs } = chartGeom;
+  function onMove(ev) {
+    const rect = svg.getBoundingClientRect();
+    const clientX = (ev.touches ? ev.touches[0].clientX : ev.clientX);
+    const sx = (clientX - rect.left) / rect.width * chartGeom.W;
+    let best = 0, bd = Infinity;
+    xs.forEach((t, i) => { const d = Math.abs(X(t) - sx); if (d < bd) { bd = d; best = i; } });
+    const p = pts[best];
+    const px = X(xs[best]) / chartGeom.W * rect.width;
+    xline.setAttribute('x1', X(xs[best]));
+    xline.setAttribute('x2', X(xs[best]));
+    xline.setAttribute('visibility', 'visible');
+    tt.style.display = 'block';
+    tt.innerHTML = `${fmtIso(p.date, true)}<br>体重 <b>${p.w}kg</b>` + (p.lean != null ? `<br>除脂肪 <b>${p.lean}kg</b>` : '');
+    const ttw = tt.offsetWidth;
+    tt.style.left = Math.max(0, Math.min(px + 10, rect.width - ttw)) + 'px';
+    tt.style.top = '8px';
+  }
+  function onLeave() { tt.style.display = 'none'; xline.setAttribute('visibility', 'hidden'); }
+  svg.addEventListener('mousemove', onMove);
+  svg.addEventListener('mouseleave', onLeave);
+  svg.addEventListener('touchstart', onMove, { passive: true });
+  svg.addEventListener('touchmove', onMove, { passive: true });
+  wrap.addEventListener('touchend', onLeave);
+}
+function buildMonthly() {
+  const months = new Map();
+  for (const [k, d] of Object.entries(store.days)) {
+    const ym = k.slice(0, 7);
+    if (!months.has(ym)) months.set(ym, { gym: 0, vol: 0, cardio: 0, wSum: 0, wCnt: 0 });
+    const m = months.get(ym);
+    const flags = dayFlags(d);
+    if (flags.st || flags.ca) m.gym++;
+    for (const w of (d.workouts || [])) {
+      if (w.minutes != null) m.cardio += w.minutes;
+      for (const s of (w.sets || [])) if (s.w != null && s.r != null) m.vol += s.w * s.r;
+    }
+    if (d.body && d.body.weight != null) { m.wSum += d.body.weight; m.wCnt++; }
+  }
+  const rows = [...months.entries()].sort((a, b) => b[0].localeCompare(a[0]));
+  if (!rows.length) return '<div class="empty">記録がまだありません</div>';
+  return `<table class="sum">
+    <thead><tr><th>月</th><th>ジム日数</th><th>ボリューム(kg)</th><th>有酸素(分)</th><th>平均体重</th></tr></thead>
+    <tbody>` + rows.map(([ym, m]) => {
+      const [y, mo] = ym.split('-');
+      return `<tr><td>${y}/${Number(mo)}</td><td>${m.gym}</td><td>${Math.round(m.vol).toLocaleString()}</td>
+        <td>${Math.round(m.cardio)}</td><td>${m.wCnt ? round1(m.wSum / m.wCnt) + 'kg' : '—'}</td></tr>`;
+    }).join('') + '</tbody></table>';
+}
+
+/* ================= 設定 ================= */
+function renderSettings(main) {
+  const TYPE_LABEL = { weight: '重量×回数', reps: '回数のみ', cardio: '分' };
+  let html = `<h1>設定</h1>
+  <h2>種目の管理</h2>
+  <div class="card">` +
+    store.exercises.map((e, i) => `
+      <div class="exrow ${e.hidden ? 'hidden-ex' : ''}">
+        <input type="text" value="${esc(e.name)}" onchange="renameEx(${i}, this.value)">
+        <span class="type">${TYPE_LABEL[e.type]}</span>
+        <button onclick="toggleEx(${i})">${e.hidden ? '表示' : '非表示'}</button>
+      </div>`).join('') + `
+    <div class="addex">
+      <input type="text" id="newExName" placeholder="新しい種目名">
+      <select id="newExType">
+        <option value="weight">重量×回数</option>
+        <option value="reps">回数のみ</option>
+        <option value="cardio">分（有酸素）</option>
+      </select>
+      <button class="primary" onclick="addEx()">追加</button>
+    </div>
+    <div class="hint">「非表示」にすると記録画面の種目一覧から消えます（過去の記録はそのまま残ります）。</div>
+  </div>
+  <h2>バックアップ</h2>
+  <div class="card setting-actions">
+    <button onclick="exportJson()">📤 データをエクスポート（JSONファイル保存）</button>
+    <button onclick="document.getElementById('importFile').click()">📥 データをインポート（JSONファイル読込）</button>
+    <div class="hint">データはこの端末のブラウザ内にだけ保存されています。機種変更や別端末との共有にはエクスポート→インポートを使ってください。</div>
+  </div>
+  <h2>データ</h2>
+  <div class="card setting-actions">
+    <button class="danger" onclick="wipeAll()">🗑 すべてのデータを削除</button>
+    <div class="hint">記録日数: ${Object.keys(store.days).length}日 / 種目: ${store.exercises.length}件</div>
+  </div>`;
+  main.innerHTML = html;
+}
+function renameEx(i, v) {
+  const name = v.trim();
+  if (name) store.exercises[i].name = name;
+  save(); render();
+}
+function toggleEx(i) { store.exercises[i].hidden = !store.exercises[i].hidden; save(); render(); }
+function addEx() {
+  const name = document.getElementById('newExName').value.trim();
+  const type = document.getElementById('newExType').value;
+  if (!name) return;
+  store.exercises.push({ id: 'x' + Date.now(), name, type });
+  save(); render();
+}
+function exportJson() {
+  const blob = new Blob([JSON.stringify(store, null, 1)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `kintore-backup-${todayIso().replace(/-/g, '')}.json`;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+}
+document.getElementById('importFile').addEventListener('change', function () {
+  const file = this.files[0];
+  this.value = '';
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const s = JSON.parse(reader.result);
+      if (!s || typeof s.days !== 'object' || !Array.isArray(s.exercises)) throw new Error('形式が違います');
+      if (!confirm(`インポートすると現在のデータ（${Object.keys(store.days).length}日分）を置き換えます。よろしいですか？`)) return;
+      store = s;
+      save(); render();
+      alert(`インポート完了: ${Object.keys(store.days).length}日分`);
+    } catch (e) {
+      alert('インポート失敗: ' + e.message);
+    }
+  };
+  reader.readAsText(file);
+});
+function wipeAll() {
+  if (!confirm('すべての記録を削除します。よろしいですか？')) return;
+  if (!confirm('本当に削除しますか？（エクスポートしていないデータは戻せません）')) return;
+  localStorage.removeItem(LS_KEY);
+  store = loadStore();
+  render();
+}
+
+/* ================= 起動 ================= */
+render();
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+  navigator.serviceWorker.register('sw.js');
+}
+</script>
+</body>
+</html>
