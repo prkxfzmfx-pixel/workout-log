@@ -155,6 +155,13 @@ table.cal td.today .d {
   display: inline-block; min-width: 22px; line-height: 22px;
   background: var(--accent); color: #fff; border-radius: 11px; font-weight: 600;
 }
+table.cal td.selday { background: rgba(42,120,214,0.14); border-radius: 8px; }
+/* 月間サマリ行 */
+.sumline { display: flex; gap: 4px; text-align: center; }
+.sumline div { flex: 1; }
+.sumline .lb { font-size: 11px; color: var(--muted); }
+.sumline .v { font-size: 15px; font-weight: 700; }
+.num { font-variant-numeric: tabular-nums; }
 table.cal td .bw { font-size: 10px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
 table.cal td .marks { display: flex; gap: 3px; justify-content: center; margin-top: 2px; height: 8px; }
 .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
@@ -327,15 +334,16 @@ const state = {
   tab: 'input',
   date: todayIso(),
   calY: null, calM: null,   // カレンダー表示中の年月
-  range: '3m',              // 集計の期間
+  calSel: todayIso(),       // カレンダーで選択中の日
+  range: '3m',              // レポートの期間
 };
 
 /* ================= ナビ ================= */
 const TABS = [
+  { id: 'input',    ico: '✏️', label: '入力' },
   { id: 'cal',      ico: '📅', label: 'カレンダー' },
   { id: 'list',     ico: '📋', label: '一覧' },
-  { id: 'input',    ico: '✏️', label: '記録' },
-  { id: 'stats',    ico: '📈', label: '集計' },
+  { id: 'stats',    ico: '📊', label: 'レポート' },
   { id: 'settings', ico: '⚙️', label: '設定' },
 ];
 function renderNav() {
@@ -366,7 +374,7 @@ function renderInput(main) {
   const workouts = d.workouts || [];
 
   let html = `
-  <h1>記録</h1>
+  <h1>入力</h1>
   <div class="daynav">
     <button onclick="chDate(-1)" aria-label="前日">◀</button>
     <input type="date" value="${date}" onchange="setDate(this.value)">
@@ -480,6 +488,27 @@ function setMinutes(wi, v) {
 }
 
 /* ================= カレンダー ================= */
+// 1日分の内容（体組成＋トレーニング）のHTML。カレンダー下部と一覧で共用
+function dayDetailHtml(d) {
+  const lean = leanMass(d.body);
+  let bodyLine = '';
+  if (d.body && (d.body.weight != null || d.body.fat != null)) {
+    const p = [];
+    if (d.body.weight != null) p.push(`体重 ${d.body.weight}kg`);
+    if (d.body.fat != null) p.push(`体脂肪 ${d.body.fat}%`);
+    if (lean != null) p.push(`除脂肪 ${lean}kg`);
+    bodyLine = `<div class="dc-body">${p.join('　')}</div>`;
+  }
+  let woHtml = '';
+  for (const w of (d.workouts || [])) {
+    const t = exType(w.ex);
+    const detail = t === 'cardio' || w.minutes != null
+      ? `${w.minutes != null ? w.minutes + '分' : ''}`
+      : fmtSets(w.sets || []);
+    woHtml += `<div class="dc-wo"><span class="exn">${esc(exName(w.ex))}</span><span class="sets">${esc(detail)}</span></div>`;
+  }
+  return bodyLine + woHtml;
+}
 function renderCal(main) {
   if (state.calY == null) {
     const t = isoToDate(state.date);
@@ -499,7 +528,7 @@ function renderCal(main) {
     const d = getDay(iso);
     const flags = d ? dayFlags(d) : { st: false, ca: false };
     const bw = d && d.body && d.body.weight != null ? d.body.weight : null;
-    row += `<td class="${iso === today ? 'today' : ''}" onclick="openDate('${iso}')">
+    row += `<td class="${iso === today ? 'today' : ''} ${iso === state.calSel ? 'selday' : ''}" onclick="calSelect('${iso}')">
       <div class="d">${day}</div>
       <div class="bw">${bw != null ? bw : '&nbsp;'}</div>
       <div class="marks">${flags.st ? '<span class="dot st"></span>' : ''}${flags.ca ? '<span class="dot ca"></span>' : ''}</div>
@@ -512,6 +541,21 @@ function renderCal(main) {
     cells += row + '</tr>';
   }
 
+  // 表示中の月のサマリ（ジム日数・総ボリューム・有酸素分）
+  const ymStr = `${y}-${String(m + 1).padStart(2, '0')}`;
+  let gymDays = 0, vol = 0, cardio = 0;
+  for (const [k, d] of Object.entries(store.days)) {
+    if (!k.startsWith(ymStr)) continue;
+    if ((d.workouts || []).length) gymDays++;
+    for (const w of (d.workouts || [])) {
+      if (w.minutes != null) cardio += w.minutes;
+      for (const s of (w.sets || [])) if (s.w != null && s.r != null) vol += s.w * s.r;
+    }
+  }
+
+  const selDay = getDay(state.calSel);
+  const selDetail = selDay ? dayDetailHtml(selDay) : '';
+
   main.innerHTML = `
   <h1>カレンダー</h1>
   <div class="card">
@@ -519,6 +563,11 @@ function renderCal(main) {
       <button onclick="chMonth(-1)" aria-label="前月">◀</button>
       <span class="ym">${y}年${m + 1}月</span>
       <button onclick="chMonth(1)" aria-label="翌月">▶</button>
+    </div>
+    <div class="sumline" style="margin-bottom:8px">
+      <div><div class="lb">ジム</div><div class="v num">${gymDays}日</div></div>
+      <div><div class="lb">ボリューム</div><div class="v num">${Math.round(vol).toLocaleString()}kg</div></div>
+      <div><div class="lb">有酸素</div><div class="v num">${Math.round(cardio)}分</div></div>
     </div>
     <table class="cal">
       <thead><tr>${WD.map(w => `<th>${w}</th>`).join('')}</tr></thead>
@@ -529,6 +578,11 @@ function renderCal(main) {
       <span><span class="dot ca"></span>有酸素</span>
       <span>数字＝体重(kg)</span>
     </div>
+  </div>
+  <h2>${fmtIso(state.calSel)}</h2>
+  <div class="card">
+    ${selDetail || '<div class="empty">記録なし</div>'}
+    <div style="margin-top:8px"><button class="ghost" onclick="openDate('${state.calSel}')">${selDetail ? '✏️ この日を修正' : '＋ この日に入力'}</button></div>
   </div>`;
 }
 function chMonth(n) {
@@ -537,6 +591,7 @@ function chMonth(n) {
   if (state.calM > 11) { state.calM = 0; state.calY++; }
   render();
 }
+function calSelect(iso) { state.calSel = iso; render(); }
 
 /* ================= 一覧 ================= */
 function renderList(main) {
@@ -552,25 +607,8 @@ function renderList(main) {
       const [yy, mm] = ym.split('-');
       html += `<div class="month-head">${yy}年${Number(mm)}月</div>`;
     }
-    const lean = leanMass(d.body);
-    let bodyLine = '';
-    if (d.body && (d.body.weight != null || d.body.fat != null)) {
-      const p = [];
-      if (d.body.weight != null) p.push(`体重 ${d.body.weight}kg`);
-      if (d.body.fat != null) p.push(`体脂肪 ${d.body.fat}%`);
-      if (lean != null) p.push(`除脂肪 ${lean}kg`);
-      bodyLine = `<div class="dc-body">${p.join('　')}</div>`;
-    }
-    let woHtml = '';
-    for (const w of (d.workouts || [])) {
-      const t = exType(w.ex);
-      const detail = t === 'cardio' || w.minutes != null
-        ? `${w.minutes != null ? w.minutes + '分' : ''}`
-        : fmtSets(w.sets || []);
-      woHtml += `<div class="dc-wo"><span class="exn">${esc(exName(w.ex))}</span><span class="sets">${esc(detail)}</span></div>`;
-    }
     html += `<div class="card daycard" onclick="openDate('${k}')">
-      <div class="dc-date">${fmtIso(k)}</div>${bodyLine}${woHtml}</div>`;
+      <div class="dc-date">${fmtIso(k)}</div>${dayDetailHtml(d)}</div>`;
   }
   main.innerHTML = html;
 }
@@ -592,7 +630,7 @@ function renderStats(main) {
     .map(k => ({ date: k, w: store.days[k].body?.weight ?? null, lean: leanMass(store.days[k].body) }))
     .filter(p => p.w != null);
 
-  let html = `<h1>集計</h1>
+  let html = `<h1>レポート</h1>
   <h2>体重の推移</h2>
   <div class="card">
     <div class="chips">` + RANGES.map(([id, label]) =>
