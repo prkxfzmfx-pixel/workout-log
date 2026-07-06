@@ -761,8 +761,27 @@ function renderSettings(main) {
   <div class="card setting-actions">
     <button class="danger" onclick="wipeAll()">🗑 すべてのデータを削除</button>
     <div class="hint">記録日数: ${Object.keys(store.days).length}日 / 種目: ${store.exercises.length}件</div>
+    <div class="hint" style="word-break:break-all">画面診断: ${esc(viewportDebug())}</div>
   </div>`;
   main.innerHTML = html;
+}
+// レイアウト不具合の調査用（設定タブ最下部に表示）
+function viewportDebug() {
+  try {
+    const de = document.documentElement;
+    const vv = window.visualViewport;
+    return [
+      'standalone=' + (navigator.standalone === true),
+      'inner=' + window.innerHeight,
+      'screen=' + screen.width + 'x' + screen.height,
+      'htmlClient=' + de.clientHeight,
+      'bodyOffset=' + document.body.offsetHeight,
+      'vv=' + (vv ? Math.round(vv.height) : '-'),
+      'appH=' + (de.style.getPropertyValue('--appH') || '-'),
+      'padTop=' + getComputedStyle(document.body).paddingTop,
+      'navPadB=' + getComputedStyle(document.getElementById('nav')).paddingBottom,
+    ].join(' ');
+  } catch (e) { return 'err:' + e.message; }
 }
 function renameEx(i, v) {
   const name = v.trim();
