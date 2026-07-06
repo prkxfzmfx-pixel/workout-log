@@ -28,6 +28,8 @@ global.document = {
   getElementById: id => elements[id] || (elements[id] = makeEl(id)),
   createElement: tag => makeEl(tag),
   body: { appendChild() {} },
+  addEventListener() {},
+  hidden: false,
 };
 global.window = { scrollTo() {}, addEventListener() {} };
 global.navigator = {};
@@ -44,7 +46,7 @@ const bootstrap = `(function(){ 'use strict';\n` + dataJs + '\n' + appJs + `
 ;globalThis.__api = {
   get store() { return store; },
   state, go, render, openDate, setBody, addWorkout, addSet, delSet, setSetVal,
-  addEx, toggleEx, renameEx, calSelect,
+  addEx, toggleEx, renameEx, calSelect, cloudBackup,
 };})()`;
 eval(bootstrap);
 const { state, go, render, openDate, setBody, addWorkout, addSet, delSet, setSetVal, addEx, toggleEx, renameEx, calSelect } = globalThis.__api;
@@ -191,4 +193,29 @@ assert.deepStrictEqual(migrated.days['2026-01-01'].workouts[0].sets, [{ w: 40, r
 assert(JSON.parse(lsData['kintore.v1']).version === 2, '移行結果が保存される');
 console.log('OK v1→v2移行（既存端末のメモ削除）');
 
-console.log('\n=== 全14項目 PASS ===');
+// 15) クラウドバックアップ（fetchモック）
+(async () => {
+  const calls = [];
+  global.fetch = async (url, opts = {}) => {
+    calls.push({ url, method: opts.method || 'GET', body: opts.body });
+    if (!opts.method) return { status: 200, ok: true, json: async () => ({ sha: 'abc' }) };
+    return { ok: true, status: 200, json: async () => ({}) };
+  };
+  const cb = globalThis.__api.cloudBackup;
+  let r = await cb();
+  assert.strictEqual(r.skipped, 'no-token', 'トークン未設定はスキップ');
+  lsData['kintore.cloudToken'] = 'testtoken';
+  r = await cb();
+  assert(r.ok, 'バックアップ成功');
+  assert.strictEqual(calls.length, 2, 'GET(sha取得)+PUT');
+  assert(calls[1].url.includes('app-backups/contents/kintore.json'), 'アップロード先');
+  assert(JSON.parse(calls[1].body).sha === 'abc', '既存ファイルのshaを指定');
+  assert(JSON.parse(lsData['kintore.cloudMeta']).last, 'バックアップ日を記録');
+  r = await cb();
+  assert.strictEqual(r.skipped, 'done-today', '同日2回目はスキップ');
+  r = await cb(true);
+  assert(r.ok, 'force指定は同日でも実行');
+  console.log('OK クラウドバックアップ（1日1回・sha更新・スキップ判定）');
+
+  console.log('\n=== 全15項目 PASS ===');
+})().catch(e => { console.error(e); process.exit(1); });

@@ -51,3 +51,4 @@ iPhoneのホーム画面から使う筋トレ記録アプリ。**修正指示を
 - カレンダー: 日タップ→選択ハイライト＋下部に詳細（チップ表示）→「この日を修正」で入力タブへ
 - 描画は `render()` が state.tab に応じて main.innerHTML を丸ごと書き換える方式。イベントはHTML属性のonclick
 - グラフ色は検証済みパレット（体重=#2a78d6系 / 除脂肪=#1baf7a系、ダークモードは別調整値）。色を追加するときは凡例・ラベルを必ず併記
+- クラウド自動バックアップ: 起動時＋前面復帰時に1日1回、非公開リポ `prkxfzmfx-pixel/app-backups` の `kintore.json` へGitHub API直接PUT（`cloudBackup()`）。トークン（Fine-grained PAT）はlocalStorage `kintore.cloudToken` にのみ保存。**トークンをコードやリポジトリに書かない**
