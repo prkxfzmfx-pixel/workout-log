@@ -44,15 +44,32 @@
   }
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
-html { -webkit-text-size-adjust: 100%; }
+html { -webkit-text-size-adjust: 100%; height: 100%; }
+/* 画面の高さに固定し、mainだけをスクロールさせる。
+   上下のセーフエリア（時計・ホームバー）はenv()で端末ごとに自動確保 */
 body {
   font-family: system-ui, -apple-system, "Segoe UI", "Hiragino Sans", "Yu Gothic UI", sans-serif;
   background: var(--page);
   color: var(--ink-1);
   font-size: 16px;
-  padding-bottom: calc(64px + env(safe-area-inset-bottom));
+  height: 100vh;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  padding-top: env(safe-area-inset-top);
+  overflow: hidden;
 }
-main { max-width: 640px; margin: 0 auto; padding: 12px 12px 24px; }
+main {
+  flex: 1 1 0;
+  min-height: 0;
+  width: 100%;
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 0 12px 24px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+}
 h1 { font-size: 18px; padding: 14px 4px 6px; }
 h2 { font-size: 14px; color: var(--ink-2); font-weight: 600; margin: 16px 4px 8px; }
 .card {
@@ -86,9 +103,9 @@ input, select {
 input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 input[type="number"] { text-align: right; font-variant-numeric: tabular-nums; }
 
-/* ボトムナビ */
+/* ボトムナビ（flexレイアウトの最下段。fixedにしない） */
 nav {
-  position: fixed; bottom: 0; left: 0; right: 0; z-index: 10;
+  flex-shrink: 0;
   display: flex;
   background: var(--surface-1);
   border-top: 1px solid var(--border);
@@ -324,8 +341,9 @@ function renderNav() {
     `<button class="${state.tab === t.id ? 'active' : ''}" onclick="go('${t.id}')"><span class="ico">${t.ico}</span>${t.label}</button>`
   ).join('');
 }
-function go(tab) { state.tab = tab; render(); window.scrollTo(0, 0); }
-function openDate(date) { state.date = date; state.tab = 'input'; render(); window.scrollTo(0, 0); }
+function toTop() { const m = document.getElementById('main'); if (m) m.scrollTop = 0; }
+function go(tab) { state.tab = tab; render(); toTop(); }
+function openDate(date) { state.date = date; state.tab = 'input'; render(); toTop(); }
 
 function render() {
   renderNav();
@@ -637,7 +655,7 @@ function buildChart(pts) {
     return `<polyline points="${seq.join(' ')}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>` + dots;
   };
 
-  return `<svg id="chart" viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block;touch-action:pan-y">
+  return `<svg id="chart" viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;aspect-ratio:${W}/${H};display:block;touch-action:pan-y">
     ${grid}
     <line x1="${padL}" y1="${H - padB}" x2="${W - padR}" y2="${H - padB}" stroke="var(--baseline)" stroke-width="1"/>
     ${lab(xIdx)}
