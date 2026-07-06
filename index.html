@@ -174,10 +174,14 @@ table.cal td .marks { display: flex; gap: 3px; justify-content: center; margin-t
 .month-head { font-size: 13px; font-weight: 700; color: var(--ink-2); margin: 14px 4px 6px; }
 .daycard { cursor: pointer; }
 .daycard .dc-date { font-weight: 700; margin-bottom: 4px; display: flex; align-items: center; gap: 8px; }
-.daycard .dc-body { font-size: 13px; color: var(--ink-2); margin-bottom: 6px; font-variant-numeric: tabular-nums; }
-.daycard .dc-wo { font-size: 14px; padding: 3px 0; display: flex; gap: 8px; align-items: baseline; }
-.daycard .dc-wo .exn { font-weight: 600; min-width: 3.2em; flex-shrink: 0; }
-.daycard .dc-wo .sets { color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.dc-body { font-size: 13px; color: var(--ink-2); margin-bottom: 6px; font-variant-numeric: tabular-nums; }
+.daycard .dc-wo, .dc-wo { font-size: 14px; padding: 4px 0; display: flex; gap: 8px; align-items: flex-start; }
+.dc-wo .exn { font-weight: 600; min-width: 3.2em; flex-shrink: 0; padding-top: 2px; }
+.setchips { display: flex; flex-wrap: wrap; gap: 4px; }
+.chip {
+  background: var(--page); border: 1px solid var(--border); border-radius: 6px;
+  padding: 1px 8px; font-size: 13px; font-variant-numeric: tabular-nums; white-space: nowrap;
+}
 
 /* 集計 */
 .chips { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
@@ -307,18 +311,19 @@ function leanMass(body) {
   if (!body || body.weight == null || body.fat == null) return null;
   return Math.round(body.weight * (1 - body.fat / 100) * 10) / 10;
 }
-function fmtSets(sets) {
-  const parts = [];
+// 同一重量・回数の連続セットをまとめてチップ文字列の配列にする（例: "33kg 13回 ×3"）
+function fmtSetChips(sets) {
+  const chips = [];
   let i = 0;
   while (i < sets.length) {
     let j = i;
     while (j + 1 < sets.length && sets[j + 1].w === sets[i].w && sets[j + 1].r === sets[i].r) j++;
     const n = j - i + 1;
     const s = sets[i];
-    parts.push((s.w != null ? s.w + 'kg ' : '') + (s.r != null ? s.r + '回' : '') + (n > 1 ? '×' + n : ''));
+    chips.push((s.w != null ? s.w + 'kg ' : '') + (s.r != null ? s.r + '回' : '') + (n > 1 ? ' ×' + n : ''));
     i = j + 1;
   }
-  return parts.join('、');
+  return chips;
 }
 function dayFlags(d) {
   let st = false, ca = false;
@@ -352,7 +357,11 @@ function renderNav() {
   ).join('');
 }
 function toTop() { const m = document.getElementById('main'); if (m) m.scrollTop = 0; }
-function go(tab) { state.tab = tab; render(); toTop(); }
+function go(tab) {
+  // 入力タブを離れたら対象日を今日に戻す（初期化）
+  if (state.tab === 'input' && tab !== 'input') state.date = todayIso();
+  state.tab = tab; render(); toTop();
+}
 function openDate(date) { state.date = date; state.tab = 'input'; render(); toTop(); }
 
 function render() {
@@ -501,11 +510,12 @@ function dayDetailHtml(d) {
   }
   let woHtml = '';
   for (const w of (d.workouts || [])) {
-    const t = exType(w.ex);
-    const detail = t === 'cardio' || w.minutes != null
-      ? `${w.minutes != null ? w.minutes + '分' : ''}`
-      : fmtSets(w.sets || []);
-    woHtml += `<div class="dc-wo"><span class="exn">${esc(exName(w.ex))}</span><span class="sets">${esc(detail)}</span></div>`;
+    const isCardio = exType(w.ex) === 'cardio' || w.minutes != null;
+    const chips = isCardio
+      ? (w.minutes != null ? [w.minutes + '分'] : [])
+      : fmtSetChips(w.sets || []);
+    woHtml += `<div class="dc-wo"><span class="exn">${esc(exName(w.ex))}</span><span class="setchips">` +
+      chips.map(c => `<span class="chip">${esc(c)}</span>`).join('') + `</span></div>`;
   }
   return bodyLine + woHtml;
 }
