@@ -35,7 +35,7 @@ global.window = { scrollTo() {}, addEventListener() {} };
 global.navigator = {};
 global.location = { protocol: 'file:', hostname: '' };
 global.confirm = () => true;
-global.alert = () => {};
+global.alert = msg => { global.__lastAlert = msg; };
 global.URL = { createObjectURL: () => 'blob:x', revokeObjectURL() {} };
 global.Blob = class {};
 global.FileReader = class { readAsText() {} };
@@ -46,7 +46,7 @@ const bootstrap = `(function(){ 'use strict';\n` + dataJs + '\n' + appJs + `
 ;globalThis.__api = {
   get store() { return store; },
   state, go, render, openDate, setBody, addWorkout, addSet, delSet, setSetVal,
-  addEx, toggleEx, renameEx, calSelect, cloudBackup,
+  addEx, toggleEx, renameEx, calSelect, cloudBackup, decryptWithPin, applyPinToken,
 };})()`;
 eval(bootstrap);
 const { state, go, render, openDate, setBody, addWorkout, addSet, delSet, setSetVal, addEx, toggleEx, renameEx, calSelect } = globalThis.__api;
@@ -217,5 +217,25 @@ console.log('OK v1→v2移行（既存端末のメモ削除）');
   assert(r.ok, 'force指定は同日でも実行');
   console.log('OK クラウドバックアップ（1日1回・sha更新・スキップ判定）');
 
-  console.log('\n=== 全15項目 PASS ===');
+  // 16) かんたん設定コード（6桁→トークン復号）。実コード・実トークンは使わずテスト専用の暗号文で往復検証
+  const enc = new TextEncoder();
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const km = await crypto.subtle.importKey('raw', enc.encode('123456'), 'PBKDF2', false, ['deriveKey']);
+  const key = await crypto.subtle.deriveKey({ name: 'PBKDF2', salt, iterations: 310000, hash: 'SHA-256' }, km, { name: 'AES-GCM', length: 256 }, false, ['encrypt']);
+  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, enc.encode('github_pat_TESTTOKEN')));
+  const blob = Buffer.concat([salt, iv, ct]).toString('base64');
+  assert.strictEqual(await globalThis.__api.decryptWithPin('123456', blob), 'github_pat_TESTTOKEN', '正しいコードで復号できる');
+  let pinFailed = false;
+  try { await globalThis.__api.decryptWithPin('000000', blob); } catch (e) { pinFailed = true; }
+  assert(pinFailed, '誤ったコードは復号失敗（AES-GCM認証エラー）');
+  globalThis.__api.go('settings');
+  assert(elements.main.innerHTML.includes('id="cloudPin"'), '設定タブにコード入力欄');
+  document.getElementById('cloudPin').value = '000000';
+  global.__lastAlert = '';
+  await globalThis.__api.applyPinToken();
+  assert.strictEqual(global.__lastAlert, 'パスワードが間違っています', '誤ったコードでエラーメッセージ');
+  console.log('OK かんたん設定コード（復号往復・誤コード検出）');
+
+  console.log('\n=== 全16項目 PASS ===');
 })().catch(e => { console.error(e); process.exit(1); });
