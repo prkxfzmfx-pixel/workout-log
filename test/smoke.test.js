@@ -53,9 +53,9 @@ const { state, go, render, openDate, setBody, addWorkout, addSet, delSet, setSet
 const store = new Proxy({}, { get: (_, k) => globalThis.__api.store[k], has: (_, k) => k in globalThis.__api.store });
 
 // 1) 初期シード
-assert.strictEqual(Object.keys(store.days).length, 71, '初期データ71日');
+assert.strictEqual(Object.keys(store.days).length, 87, '初期データ87日');
 assert.strictEqual(store.exercises.length, 8, '種目8件');
-console.log('OK 初期シード: 71日 / 8種目');
+console.log('OK 初期シード: 87日 / 8種目');
 
 // 2) 各タブのレンダリング
 for (const t of ['cal', 'list', 'stats', 'settings', 'input']) {
@@ -81,7 +81,7 @@ assert(detailHtml.includes('5/13(水)'), '選択日の見出し');
 assert(detailHtml.includes('chip">33kg 13回 ×3<'), '選択日の内容がチップ表示');
 assert(detailHtml.includes('chip">60分<'), '有酸素もチップ表示');
 assert(detailHtml.includes('この日を修正'), '修正ボタン');
-calSelect('2026-05-20'); // 記録なしの日
+calSelect('2026-05-21'); // 記録なしの日
 assert(elements.main.innerHTML.includes('記録なし') && elements.main.innerHTML.includes('この日に入力'), '記録なしの日は入力ボタン');
 openDate('2026-05-13');
 assert.strictEqual(state.tab, 'input', '修正ボタン相当で入力タブへ');
@@ -114,16 +114,16 @@ assert.strictEqual(store.days['2026-07-05'].body.weight, 64.2);
 assert(elements.main.innerHTML.includes('52.6 kg'), '除脂肪 64.2*0.82=52.64→52.6');
 console.log('OK 体組成入力と除脂肪自動計算');
 
-// 6) 前回値プリセット: 胸を追加 → 2026-05-13 の 33kg×11,9,7 が入る
+// 6) 前回値プリセット: 胸を追加 → 直近の胸 2026-06-17 の 33kg×10,8,6 が入る
 addWorkout('m');
 const w = store.days['2026-07-05'].workouts[0];
 assert.strictEqual(w.ex, 'm');
-assert.deepStrictEqual(w.sets, [{ w: 33, r: 11 }, { w: 33, r: 9 }, { w: 33, r: 7 }], '前回値プリセット');
-console.log('OK 前回値プリセット (胸: 33kg 11/9/7回)');
+assert.deepStrictEqual(w.sets, [{ w: 33, r: 10 }, { w: 33, r: 8 }, { w: 33, r: 6 }], '前回値プリセット');
+console.log('OK 前回値プリセット (胸: 33kg 10/8/6回)');
 
 // 7) セット追加＝直前セットの複製、値変更、削除
 addSet(0);
-assert.deepStrictEqual(store.days['2026-07-05'].workouts[0].sets[3], { w: 33, r: 7 });
+assert.deepStrictEqual(store.days['2026-07-05'].workouts[0].sets[3], { w: 33, r: 6 });
 setSetVal(0, 3, 'w', '35');
 assert.strictEqual(store.days['2026-07-05'].workouts[0].sets[3].w, 35);
 delSet(0, 3);
