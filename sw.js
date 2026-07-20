@@ -1,5 +1,5 @@
 // ネットワーク優先・失敗時キャッシュ（オフラインでも起動できるように）
-const CACHE = 'kintore-v2';
+const CACHE = 'kintore-v3';
 const ASSETS = ['./', './index.html', './data.js', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png'];
 
 self.addEventListener('install', e => {
