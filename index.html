@@ -224,6 +224,7 @@ textarea.io { width: 100%; height: 90px; font-size: 12px; margin-top: 8px; font-
 <nav id="nav"></nav>
 <input type="file" id="importFile" accept=".json,application/json" style="display:none">
 <script src="data.js"></script>
+<script src="body-import.js"></script>
 <script>
 'use strict';
 /* ================= ストア ================= */
@@ -270,6 +271,34 @@ function migrate(s) {
   return s;
 }
 function save() { localStorage.setItem(LS_KEY, JSON.stringify(store)); }
+
+/* ===== 体組成データの一括取り込み（body-import.js / 起動時に1回だけ） =====
+   既存データは絶対に上書きしない。body（体重・体脂肪率）が未設定の日にだけ追加し、
+   すでに body がある日・workouts は一切触らない。
+   取り込み済みIDをlocalStorageに記録し、2回目以降は何もしない
+   （利用者があとで消した日を、再訪のたびに復活させないため）。 */
+const BODY_IMPORT_KEY = 'kintore.bodyImport';
+function applyBodyImport() {
+  if (typeof BODY_IMPORT === 'undefined' || !BODY_IMPORT || !BODY_IMPORT.days) return { skipped: 'no-data' };
+  if (localStorage.getItem(BODY_IMPORT_KEY) === BODY_IMPORT.id) return { skipped: 'done' };
+  let added = 0, kept = 0;
+  for (const date of Object.keys(BODY_IMPORT.days)) {
+    const cur = store.days[date];
+    if (cur && cur.body && (cur.body.weight != null || cur.body.fat != null)) { kept++; continue; }
+    const src = BODY_IMPORT.days[date];
+    const body = {};
+    if (src.weight != null) body.weight = src.weight;
+    if (src.fat != null) body.fat = src.fat;
+    if (!Object.keys(body).length) continue;
+    if (!store.days[date]) store.days[date] = { workouts: [] };
+    store.days[date].body = body;
+    added++;
+  }
+  localStorage.setItem(BODY_IMPORT_KEY, BODY_IMPORT.id);
+  if (added) save();
+  return { added, kept };
+}
+applyBodyImport();
 
 function exById(id) { return store.exercises.find(e => e.id === id); }
 function exName(id) { const e = exById(id); return e ? e.name : id; }

@@ -6,6 +6,7 @@ const assert = require('assert');
 
 const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
 const dataJs = fs.readFileSync(path.join(__dirname, '..', 'data.js'), 'utf8');
+const bodyImportJs = fs.readFileSync(path.join(__dirname, '..', 'body-import.js'), 'utf8');
 const appJs = /<script>([\s\S]*)<\/script>/.exec(html)[1];
 
 // ---- スタブ ----
@@ -42,20 +43,26 @@ global.FileReader = class { readAsText() {} };
 
 // ---- 実行 ----
 // 'use strict' のため eval 内の宣言は外に漏れない → APIをglobalに書き出す
-const bootstrap = `(function(){ 'use strict';\n` + dataJs + '\n' + appJs + `
+const bootstrap = `(function(){ 'use strict';\n` + dataJs + '\n' + bodyImportJs + '\n' + appJs + `
 ;globalThis.__api = {
   get store() { return store; },
   state, go, render, openDate, setBody, addWorkout, addSet, delSet, setSetVal,
   addEx, toggleEx, renameEx, calSelect, cloudBackup, decryptWithPin, applyPinToken,
+  applyBodyImport, BODY_IMPORT,
 };})()`;
 eval(bootstrap);
 const { state, go, render, openDate, setBody, addWorkout, addSet, delSet, setSetVal, addEx, toggleEx, renameEx, calSelect } = globalThis.__api;
 const store = new Proxy({}, { get: (_, k) => globalThis.__api.store[k], has: (_, k) => k in globalThis.__api.store });
 
-// 1) 初期シード
-assert.strictEqual(Object.keys(store.days).length, 87, '初期データ87日');
+// 1) 初期シード（data.js 87日 + body-import.js の体組成237日 → 新規日付200日が増えて287日）
+assert.strictEqual(Object.keys(store.days).length, 287, '初期データ87日 + 体組成取り込みで287日');
 assert.strictEqual(store.exercises.length, 8, '種目8件');
-console.log('OK 初期シード: 87日 / 8種目');
+assert.strictEqual(Object.keys(globalThis.__api.BODY_IMPORT.days).length, 237, '体組成取り込みデータ237日');
+assert.deepStrictEqual(store.days['2026-08-28'].body, { weight: 58.6, fat: 18.6 }, '取り込んだ体組成（最新日）');
+assert.deepStrictEqual(store.days['2026-08-28'].workouts, [], '体組成だけの日はworkouts空');
+assert.deepStrictEqual(store.days['2023-11-17'].body, { weight: 59.4 }, '体脂肪率が--の日は体重だけ取り込む');
+assert.strictEqual(lsData['kintore.bodyImport'], 'fitdays-20260829', '取り込み済みフラグ');
+console.log('OK 初期シード: 287日（87日 + 体組成200日） / 8種目 / 体組成取り込み');
 
 // 2) 各タブのレンダリング
 for (const t of ['cal', 'list', 'stats', 'settings', 'input']) {
@@ -193,7 +200,33 @@ assert.deepStrictEqual(migrated.days['2026-01-01'].workouts[0].sets, [{ w: 40, r
 assert(JSON.parse(lsData['kintore.v1']).version === 2, '移行結果が保存される');
 console.log('OK v1→v2移行（既存端末のメモ削除）');
 
-// 15) クラウドバックアップ（fetchモック）
+// 15) 体組成の一括取り込みは非破壊（既存bodyを上書きしない／既存の日にはbodyだけ足す／1回だけ）
+lsData['kintore.v1'] = JSON.stringify({
+  version: 2,
+  exercises: [{ id: 's', name: '背中', type: 'weight' }],
+  days: {
+    // 既存の体組成（Fitdaysの値と違う）→ 絶対に上書きされないこと
+    '2026-08-27': { workouts: [], body: { weight: 99, fat: 99 } },
+    // 筋トレだけの既存日 → workoutsを保ったままbodyが足されること
+    '2026-08-24': { workouts: [{ ex: 's', sets: [{ w: 40, r: 10 }] }] },
+  },
+});
+delete lsData['kintore.bodyImport'];
+eval(bootstrap);
+const imported = globalThis.__api.store;
+assert.deepStrictEqual(imported.days['2026-08-27'].body, { weight: 99, fat: 99 }, '既存bodyは上書きしない');
+assert.deepStrictEqual(imported.days['2026-08-24'].body, { weight: 59.1, fat: 18.9 }, '既存日にbodyだけ追加');
+assert.deepStrictEqual(imported.days['2026-08-24'].workouts, [{ ex: 's', sets: [{ w: 40, r: 10 }] }], '既存workoutsは保持');
+assert.strictEqual(Object.keys(imported.days).length, 2 + 235, '既存2日 + 新規235日');
+assert.strictEqual(lsData['kintore.bodyImport'], 'fitdays-20260829', '取り込み済みフラグを記録');
+// 2回目は何もしない（利用者が消した日を復活させない）
+delete imported.days['2026-08-28'];
+const again = globalThis.__api.applyBodyImport();
+assert.strictEqual(again.skipped, 'done', '2回目の取り込みはスキップ');
+assert(!imported.days['2026-08-28'], '消した日は復活しない');
+console.log('OK 体組成の一括取り込み（非破壊・既存body保護・1回だけ）');
+
+// 16) クラウドバックアップ（fetchモック）
 (async () => {
   const calls = [];
   global.fetch = async (url, opts = {}) => {
@@ -217,7 +250,7 @@ console.log('OK v1→v2移行（既存端末のメモ削除）');
   assert(r.ok, 'force指定は同日でも実行');
   console.log('OK クラウドバックアップ（1日1回・sha更新・スキップ判定）');
 
-  // 16) かんたん設定コード（6桁→トークン復号）。実コード・実トークンは使わずテスト専用の暗号文で往復検証
+  // 17) かんたん設定コード（6桁→トークン復号）。実コード・実トークンは使わずテスト専用の暗号文で往復検証
   const enc = new TextEncoder();
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const iv = crypto.getRandomValues(new Uint8Array(12));
@@ -237,5 +270,5 @@ console.log('OK v1→v2移行（既存端末のメモ削除）');
   assert.strictEqual(global.__lastAlert, 'パスワードが間違っています', '誤ったコードでエラーメッセージ');
   console.log('OK かんたん設定コード（復号往復・誤コード検出）');
 
-  console.log('\n=== 全16項目 PASS ===');
+  console.log('\n=== 全17項目 PASS ===');
 })().catch(e => { console.error(e); process.exit(1); });
