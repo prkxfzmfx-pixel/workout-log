@@ -12,6 +12,7 @@ iPhoneのホーム画面から使う筋トレ記録アプリ。**修正指示を
 |---|---|
 | index.html | アプリ本体。CSS/JSすべてこの1ファイルに入っている（外部ライブラリ・CDN禁止） |
 | data.js | 初回起動時にlocalStorageへ取り込む過去データ。**原則編集しない** |
+| body-import.js | 体組成計（Fitdays）CSV由来の体重・体脂肪率。`applyBodyImport()` が起動時に1回だけ、**bodyが未設定の日にだけ**追加する非破壊マージ（既存body・workoutsは触らない）。取り込み済みIDは localStorage `kintore.bodyImport` に記録。**原則編集しない**。新しいCSVを取り込むときは `id` を変えると再実行される |
 | sw.js | Service Worker（ネットワーク優先・オフラインキャッシュ） |
 | test/smoke.test.js | スモークテスト（DOMスタブ + eval方式） |
 
