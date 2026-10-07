@@ -48,7 +48,7 @@ const bootstrap = `(function(){ 'use strict';\n` + dataJs + '\n' + bodyImportJs 
   get store() { return store; },
   state, go, render, openDate, setBody, addWorkout, addSet, delSet, setSetVal,
   addEx, toggleEx, renameEx, calSelect, cloudBackup, decryptWithPin, applyPinToken,
-  applyBodyImport, BODY_IMPORT,
+  applyBodyImport, BODY_IMPORT, save,
 };})()`;
 eval(bootstrap);
 const { state, go, render, openDate, setBody, addWorkout, addSet, delSet, setSetVal, addEx, toggleEx, renameEx, calSelect } = globalThis.__api;
@@ -228,27 +228,84 @@ console.log('OK 体組成の一括取り込み（非破壊・既存body保護・
 
 // 16) クラウドバックアップ（fetchモック）
 (async () => {
+  // 簡易クラウド: GET(JSON)は sha と base64本文、PUTは本文を保管
   const calls = [];
+  let cloud = null; // { text, sha }
   global.fetch = async (url, opts = {}) => {
-    calls.push({ url, method: opts.method || 'GET', body: opts.body });
-    if (!opts.method) return { status: 200, ok: true, json: async () => ({ sha: 'abc' }) };
-    return { ok: true, status: 200, json: async () => ({}) };
+    const method = opts.method || 'GET';
+    calls.push({ url, method, body: opts.body });
+    if (method === 'PUT') {
+      const b = JSON.parse(opts.body);
+      cloud = { text: Buffer.from(b.content, 'base64').toString('utf8'), sha: 'sha' + calls.length };
+      return { ok: true, status: 200, json: async () => ({}) };
+    }
+    if (!cloud) return { ok: false, status: 404, json: async () => ({}) };
+    return { ok: true, status: 200, json: async () => ({ sha: cloud.sha, content: Buffer.from(cloud.text, 'utf8').toString('base64') }) };
   };
-  const cb = globalThis.__api.cloudBackup;
+  const puts = () => calls.filter(c => c.method === 'PUT').length;
+  const api = globalThis.__api;
+  const cb = api.cloudBackup;
   let r = await cb();
   assert.strictEqual(r.skipped, 'no-token', 'トークン未設定はスキップ');
   lsData['kintore.cloudToken'] = 'testtoken';
+  // クラウドにまだ無い → アップロード
   r = await cb();
-  assert(r.ok, 'バックアップ成功');
-  assert.strictEqual(calls.length, 2, 'GET(sha取得)+PUT');
-  assert(calls[1].url.includes('app-backups/contents/kintore.json'), 'アップロード先');
-  assert(JSON.parse(calls[1].body).sha === 'abc', '既存ファイルのshaを指定');
-  assert(JSON.parse(lsData['kintore.cloudMeta']).last, 'バックアップ日を記録');
+  assert(r.ok, '初回はアップロード');
+  assert.strictEqual(puts(), 1, 'PUT 1回');
+  assert(calls.find(c => c.method === 'PUT').url.includes('app-backups/contents/kintore.json'), 'アップロード先');
+  assert(JSON.parse(lsData['kintore.cloudMeta']).last, '同期日を記録');
+  // 同じ更新時刻なら何もしない（同日でも1日1回でもなく、時刻比較で判定）
   r = await cb();
-  assert.strictEqual(r.skipped, 'done-today', '同日2回目はスキップ');
+  assert.strictEqual(r.skipped, 'up-to-date', '更新時刻が同じならスキップ');
+  assert.strictEqual(puts(), 1, 'スキップ時はPUTしない');
+  // 手元で人が編集（save()でupdatedAtが進む）→ アップロード。既存shaを指定し、本文にupdatedAtが入る
+  delete lsData['kintore.cloudToken']; // save()の4秒後同期タイマーを後続テスト中に走らせない
+  const tHuman = Date.now();
+  api.store.days['2099-01-01'] = { workouts: [] };
+  api.save();
+  lsData['kintore.cloudToken'] = 'testtoken';
+  assert(api.store.updatedAt >= tHuman, '人の操作による保存ではupdatedAtが進む');
+  const shaBefore = cloud.sha;
+  r = await cb();
+  assert(r.ok, '手元が新しければ再アップロード');
+  assert.strictEqual(JSON.parse(calls.filter(c => c.method === 'PUT').pop().body).sha, shaBefore, '既存ファイルのshaを指定');
+  assert.strictEqual(JSON.parse(cloud.text).updatedAt, api.store.updatedAt, 'クラウドにupdatedAtが保存される');
+  // 他端末（スマホ）でより新しく入力された → この端末（PC）は確認なしで自動取り込みし、上書きしない
+  const phone = JSON.parse(cloud.text);
+  phone.days['2099-01-02'] = { workouts: [], body: { weight: 60 } };
+  phone.updatedAt = api.store.updatedAt + 60000;
+  cloud = { text: JSON.stringify(phone), sha: 'phoneSha' };
+  const putsBefore = puts();
+  r = await cb();
+  assert(r.pulled, 'クラウドが新しければ取り込む');
+  assert(api.store.days['2099-01-02'], 'スマホの入力がPCに反映される');
+  assert.strictEqual(api.store.updatedAt, phone.updatedAt, '更新時刻もクラウドに揃う');
+  assert.strictEqual(puts(), putsBefore, '古い端末からはアップロードしない（上書き事故防止）');
+  assert(JSON.parse(lsData['kintore.v1']).days['2099-01-02'], '取り込んだデータを端末に保存');
+  // 体組成の自動取り込み（機械的な変更）は更新時刻を進めない
+  delete lsData['kintore.cloudToken'];
+  delete lsData['kintore.bodyImport'];
+  const stampBefore = api.store.updatedAt;
+  const imp = api.applyBodyImport();
+  lsData['kintore.cloudToken'] = 'testtoken';
+  assert(imp.added > 0, '前提: 体組成の取り込みが発生');
+  assert.strictEqual(api.store.updatedAt, stampBefore, '自動取り込みではupdatedAtが変わらない');
+  r = await cb();
+  assert.strictEqual(r.skipped, 'up-to-date', '自動取り込みだけではアップロードしない');
+  // 旧データ同士（どちらも更新時刻なし）で内容が違っても、どちらかを推測で上書きしない
+  const legacyCloud = JSON.parse(cloud.text); delete legacyCloud.updatedAt; legacyCloud.days = {};
+  cloud = { text: JSON.stringify(legacyCloud), sha: 'legacy' };
+  delete api.store.updatedAt;
+  const nDays = Object.keys(api.store.days).length, putsLegacy = puts();
+  r = await cb();
+  assert.strictEqual(r.skipped, 'up-to-date', '時刻なし同士は何もしない');
+  assert.strictEqual(Object.keys(api.store.days).length, nDays, '取り込みもしない');
+  assert.strictEqual(puts(), putsLegacy, 'アップロードもしない');
+  // 明示の「今すぐバックアップ」は比較せずアップロード
   r = await cb(true);
-  assert(r.ok, 'force指定は同日でも実行');
-  console.log('OK クラウドバックアップ（1日1回・sha更新・スキップ判定）');
+  assert(r.ok, 'force指定は常にアップロード');
+  assert.strictEqual(puts(), putsLegacy + 1, 'force時はPUT');
+  console.log('OK クラウド同期（新しい方を採用・PCは自動取り込み・古い端末は上書きしない・自動取り込みは時刻不変）');
 
   // 17) かんたん設定コード（6桁→トークン復号）。実コード・実トークンは使わずテスト専用の暗号文で往復検証
   const enc = new TextEncoder();

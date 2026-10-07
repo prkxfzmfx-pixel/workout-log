@@ -57,4 +57,7 @@ iPhoneのホーム画面から使う筋トレ記録アプリ。**修正指示を
 - カレンダー: 日タップ→選択ハイライト＋下部に詳細（チップ表示）→「この日を修正」で入力タブへ
 - 描画は `render()` が state.tab に応じて main.innerHTML を丸ごと書き換える方式。イベントはHTML属性のonclick
 - グラフ色は検証済みパレット（体重=#2a78d6系 / 除脂肪=#1baf7a系、ダークモードは別調整値）。色を追加するときは凡例・ラベルを必ず併記
-- クラウド自動バックアップ: 起動時＋前面復帰時に1日1回、非公開リポ `prkxfzmfx-pixel/app-backups` の `kintore.json` へGitHub API直接PUT（`cloudBackup()`）。トークン（Fine-grained PAT）はlocalStorage `kintore.cloudToken` にのみ保存。**トークンをコードやリポジトリに書かない**
+- クラウド同期（自動バックアップ＋自動取り込み、家計簿と同仕様・2026-10-07）: 起動時＋前面復帰時＋データ保存時（`save()`→`cloudSyncSoon()`で4秒デバウンス）に `cloudBackup()` が非公開リポ `prkxfzmfx-pixel/app-backups` の `kintore.json` を取得し、`store.updatedAt` を比べて**新しい方を採用**する（クラウドが新しい→確認なしで取り込み、手元が新しい→PUT、同じ→何もしない）。トークン（Fine-grained PAT）はlocalStorage `kintore.cloudToken` にのみ保存。**トークンをコードやリポジトリに書かない**
+  - `updatedAt` は**人の操作による保存**（`save()`）でだけ進める。体組成の自動取り込み（`applyBodyImport`）は `save(true)` で進めない。新しく機械的な保存を足すときは `save(true)` にすること
+  - `cloudSyncSoon`/`CLOUD_TOKEN_KEY` は `save()` の直後に定義している（起動直後の `applyBodyImport()` が `save()` を呼ぶため、クラウド節に置くとTDZエラーになる）
+  - `updatedAt` のない旧データ同士は「同じ」とみなし、どちらも上書きしない。`force=true`（今すぐバックアップ）だけは比較せずPUT

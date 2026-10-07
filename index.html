@@ -270,7 +270,24 @@ function migrate(s) {
   }
   return s;
 }
-function save() { localStorage.setItem(LS_KEY, JSON.stringify(store)); }
+// 保存のたびにクラウドへ同期する。updatedAt は「人が入力・編集した時刻」で、端末間でどちらが新しいかの判定に使う。
+// auto=true（体組成CSVの自動取り込みなど、どの端末でも同じ結果になる機械的な変更）は時刻を進めない。
+// 進めると、古いデータの端末が自動処理しただけで「最新」と誤判定され、他端末の入力を上書きするため
+function save(auto) {
+  if (!auto) store.updatedAt = Date.now();
+  localStorage.setItem(LS_KEY, JSON.stringify(store));
+  cloudSyncSoon();
+}
+// 同期のデバウンス。起動直後の体組成取り込みもsave()を呼ぶため、定義はここ（クラウド節より前）に置く
+const CLOUD_TOKEN_KEY = 'kintore.cloudToken';
+let cloudSyncTimer = null;
+function cloudSyncSoon() {
+  if (!localStorage.getItem(CLOUD_TOKEN_KEY)) return;
+  if (cloudSyncTimer) clearTimeout(cloudSyncTimer);
+  cloudSyncTimer = setTimeout(() => { cloudSyncTimer = null; cloudBackup(); }, 4000);
+  // Node（テスト）ではタイマーでプロセスを生かし続けないように
+  if (cloudSyncTimer && cloudSyncTimer.unref) cloudSyncTimer.unref();
+}
 
 /* ===== 体組成データの一括取り込み（body-import.js / 起動時に1回だけ） =====
    既存データは絶対に上書きしない。body（体重・体脂肪率）が未設定の日にだけ追加し、
@@ -295,7 +312,7 @@ function applyBodyImport() {
     added++;
   }
   localStorage.setItem(BODY_IMPORT_KEY, BODY_IMPORT.id);
-  if (added) save();
+  if (added) save(true);
   return { added, kept };
 }
 applyBodyImport();
@@ -877,12 +894,12 @@ function addEx() {
   store.exercises.push({ id: 'x' + Date.now(), name, type });
   save(); render();
 }
-/* ================= クラウド自動バックアップ ================= */
-// アプリを開いたとき1日1回、非公開GitHubリポジトリへ全データをアップロードする。
+/* ================= クラウド同期（自動バックアップ＋自動取り込み） ================= */
+// 起動時・前面復帰時・保存時に、非公開GitHubリポジトリのバックアップと updatedAt を比べ、
+// クラウドが新しければ取り込み、手元が新しければアップロードする（スマホで入力→PCで開くだけで最新）。
 // トークン（Fine-grained PAT）は端末のlocalStorageにのみ保存され、エクスポートにも含まれない
 const CLOUD_REPO = 'prkxfzmfx-pixel/app-backups';
 const CLOUD_FILE = 'kintore.json';
-const CLOUD_TOKEN_KEY = 'kintore.cloudToken';
 const CLOUD_META_KEY = 'kintore.cloudMeta';
 
 function cloudMeta() { try { return JSON.parse(localStorage.getItem(CLOUD_META_KEY) || '{}'); } catch (e) { return {}; } }
@@ -896,30 +913,63 @@ function b64utf8(s) {
 function cloudApi() { return `https://api.github.com/repos/${CLOUD_REPO}/contents/${CLOUD_FILE}`; }
 function cloudHeaders(token) { return { 'Authorization': 'Bearer ' + token, 'Accept': 'application/vnd.github+json' }; }
 
+function stampOf(s) { return Number(s && s.updatedAt) || 0; }
+function isStoreShape(s) { return !!s && typeof s.days === 'object' && !!s.days && Array.isArray(s.exercises); }
+// クラウドのバックアップを sha と中身ごと取得する。GETは必ずcache:'no-store'
+// （HTTPキャッシュ由来の古いレスポンスだと sha がずれ、既存ファイルへのPUTが422になるため）
+async function cloudFetch(token) {
+  const g = await fetch(cloudApi(), { headers: cloudHeaders(token), cache: 'no-store' });
+  if (g.status === 404) return { exists: false };
+  if (!g.ok) throw new Error('HTTP ' + g.status);
+  const j = await g.json();
+  let text;
+  if (j.content) {
+    text = new TextDecoder().decode(Uint8Array.from(atob(j.content.replace(/\s/g, '')), ch => ch.charCodeAt(0)));
+  } else {
+    // 1MBを超えるファイルは content が空で返るため raw で取り直す
+    const r = await fetch(cloudApi(), { headers: { ...cloudHeaders(token), 'Accept': 'application/vnd.github.raw+json' }, cache: 'no-store' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    text = await r.text();
+  }
+  let data = null;
+  try { data = JSON.parse(text); } catch (e) { /* 壊れたバックアップは無視して上書き対象にする */ }
+  return { exists: true, sha: j.sha, data: isStoreShape(data) ? data : null };
+}
+
+// force=true は「今すぐバックアップ」等の明示操作で、比較せず手元の内容をアップロードする
 async function cloudBackup(force) {
   const token = localStorage.getItem(CLOUD_TOKEN_KEY);
   if (!token) return { skipped: 'no-token' };
   const today = todayIso();
-  if (!force && cloudMeta().last === today) return { skipped: 'done-today' };
   try {
-    // GETは必ずcache:'no-store'。直前の別Accept形式のGET（トークン保存時のraw取得等）が
-    // HTTPキャッシュから返ると sha が取れず、既存ファイルへのPUTが422になるため。
-    const fetchSha = async () => {
-      const g = await fetch(cloudApi(), { headers: cloudHeaders(token), cache: 'no-store' });
-      return g.status === 200 ? (await g.json()).sha : undefined;
-    };
+    const cloud = await cloudFetch(token);
+    const cloudStamp = stampOf(cloud.data), localStamp = stampOf(store);
+    if (!force && cloud.data && cloudStamp > localStamp) {
+      // 他端末で新しく入力されたデータを取り込む（この端末の古いデータでクラウドを上書きしない）
+      store = migrate(cloud.data);
+      localStorage.setItem(LS_KEY, JSON.stringify(store));
+      setCloudMeta({ last: today, ok: true, pulled: today });
+      render();
+      return { pulled: true };
+    }
+    // 同じ時刻（旧データ同士で時刻なしの場合を含む）なら何もしない。手元が新しいときだけアップロード
+    if (!force && cloud.exists && cloudStamp >= localStamp) {
+      setCloudMeta({ ...cloudMeta(), last: today, ok: true, err: '' });
+      if (state.tab === 'settings') render();
+      return { skipped: 'up-to-date' };
+    }
     const put = sha => fetch(cloudApi(), {
       method: 'PUT',
       headers: cloudHeaders(token),
       body: JSON.stringify({ message: '自動バックアップ ' + today, content: b64utf8(JSON.stringify(store)), ...(sha ? { sha } : {}) }),
     });
-    let res = await put(await fetchSha());
+    let res = await put(cloud.sha);
     if (res.status === 422 || res.status === 409) {
-      // sha欠落（キャッシュ由来）や並行更新との競合。shaを取り直して1回だけ再試行
-      res = await put(await fetchSha());
+      // sha欠落や並行更新との競合。shaを取り直して1回だけ再試行
+      res = await put((await cloudFetch(token)).sha);
     }
     if (!res.ok) throw new Error('HTTP ' + res.status);
-    setCloudMeta({ last: today, ok: true });
+    setCloudMeta({ ...cloudMeta(), last: today, ok: true, err: '' });
     if (state.tab === 'settings') render();
     return { ok: true };
   } catch (e) {
@@ -934,9 +984,9 @@ function cloudSettingsHtml() {
   let status;
   if (!tokenSet) status = '未設定（トークンを貼り付けると有効になります）';
   else if (!meta.last) status = 'トークン設定済み・バックアップ未実行';
-  else status = `最終バックアップ: ${meta.last}` + (meta.ok === false ? `　⚠️前回エラー: ${esc(meta.err || '')}` : ' ✅');
+  else status = `最終同期: ${meta.last}` + (meta.pulled ? `（最終取り込み: ${meta.pulled}）` : '') + (meta.ok === false ? `　⚠️前回エラー: ${esc(meta.err || '')}` : ' ✅');
   return `
-    <div class="hint">アプリを開いたとき1日1回、非公開リポジトリ（${CLOUD_REPO}）へ自動バックアップします。過去の世代も履歴に残ります。</div>
+    <div class="hint">アプリを開いたとき・戻ったとき・保存したときに、非公開リポジトリ（${CLOUD_REPO}）と自動同期します。他の端末で入力した新しいデータがあれば自動で取り込み、この端末の方が新しければバックアップします。過去の世代も履歴に残ります。</div>
     <div style="font-size:13px">${status}</div>
     <div class="addex">
       <input type="password" id="cloudPin" inputmode="numeric" maxlength="6" placeholder="かんたん設定コード（6桁）" style="flex:1">
@@ -1089,7 +1139,7 @@ window.addEventListener('orientationchange', fitViewport);
 fitViewport();
 render();
 cloudBackup();
-// アプリを閉じずに日をまたいで再表示したときもバックアップされるように
+// 前面に戻ったときも同期（開きっぱなしのPCでも、スマホで入力した分を取り込む）
 document.addEventListener('visibilitychange', () => { if (!document.hidden) cloudBackup(); });
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
   navigator.serviceWorker.register('sw.js');
